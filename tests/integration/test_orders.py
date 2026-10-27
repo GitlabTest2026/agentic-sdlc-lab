@@ -52,6 +52,30 @@ def test_list_orders(client):
     assert len(response.json()["items"]) == 2
 
 
+def test_list_orders_filters_by_status(client):
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    shipped_order = client.post("/orders/", json={"item": "shipped"}, headers=headers).json()
+    received_order = client.post("/orders/", json={"item": "received"}, headers=headers).json()
+
+    for next_status in ("processing", "fulfilled", "shipped"):
+        response = client.put(
+            f"/orders/{shipped_order['id']}",
+            json={"status": next_status},
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    response = client.get("/orders/?status=shipped", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert [order["id"] for order in data["items"]] == [shipped_order["id"]]
+    assert data["items"][0]["status"] == "shipped"
+    assert received_order["id"] not in [order["id"] for order in data["items"]]
+
+
 def test_update_order_status(client):
     token = _login(client)
     created = client.post("/orders/", json={"item": "widget"}, headers={
