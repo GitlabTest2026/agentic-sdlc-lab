@@ -204,3 +204,31 @@ def test_list_invoices(client):
 def test_payment_without_auth_returns_401(client):
     response = client.get("/payment/")
     assert response.status_code == 401
+
+
+def test_refund_paid_invoice(client):
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    order_resp = client.post("/orders/", json={"item": "book"}, headers=headers)
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    invoice_resp = client.post(
+        "/payment/generate", json={"order_id": order_id}, headers=headers
+    )
+    assert invoice_resp.status_code == 200
+    invoice_id = invoice_resp.json()["id"]
+
+    pay_resp = client.post(f"/payment/pay/{order_id}", headers=headers)
+    assert pay_resp.status_code == 200
+    assert pay_resp.json()["status"] == "paid"
+
+    refund_resp = client.post(f"/payment/refund/{order_id}", headers=headers)
+    assert refund_resp.status_code == 200
+    assert refund_resp.json()["status"] == "cancelled"
+
+    invoice_get = client.get(f"/payment/invoice/{invoice_id}", headers=headers)
+    order_get = client.get(f"/orders/{order_id}", headers=headers)
+    assert invoice_get.json()["status"] == "cancelled"
+    assert order_get.json()["status"] == "cancelled"
