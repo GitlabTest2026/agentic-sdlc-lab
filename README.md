@@ -86,6 +86,10 @@ curl http://localhost:8000/order/1
 
 # List Orders
 curl http://localhost:8000/orders/
+
+# Refund a paid invoice (replace <access-token> with your bearer token)
+curl -X POST http://localhost:8000/payment/refund/1 \
+  -H "Authorization: Bearer <access-token>"
 ```
 
 ## All Make Targets
