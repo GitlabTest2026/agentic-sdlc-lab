@@ -1,0 +1,45 @@
+name: Agent task contract
+description: Define the goal, scope, and acceptance criteria for an agent task.
+title: ""
+labels:
+  - agent-task
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: context-links
+    attributes:
+      label: Context links
+  - type: input
+    id: in-scope-paths
+    attributes:
+      label: In-scope paths
+    validations:
+      required: true
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      value: "alembic/, .github/, pyproject.toml, any new dependency"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: stop-and-ask
+    attributes:
+      label: Stop and ask a human if
+    validations:
+      required: true
+  - type: input
+    id: reviewer
+    attributes:
+      label: Reviewer
