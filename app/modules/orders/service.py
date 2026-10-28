@@ -1,6 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from . import repository, models
 from .exceptions import OrderNotFoundError, OrderOwnershipError
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class InvalidOrderTransition(Exception):
@@ -39,7 +44,14 @@ class OrderStateMachine:
         return status in cls.TRANSITIONS and not cls.TRANSITIONS[status]
 
     @classmethod
-    def validate_transition(cls, current: models.OrderStatus, target: models.OrderStatus) -> None:
+    def validate_transition(
+        cls,
+        current: models.OrderStatus,
+        target: models.OrderStatus,
+        *,
+        delivered_at: datetime | None = None,
+        now: datetime | None = None,
+    ) -> None:
         allowed = cls.TRANSITIONS.get(current)
         if allowed is None:
             raise InvalidOrderTransition(f"Unknown status: {current}")
@@ -47,6 +59,24 @@ class OrderStateMachine:
             raise InvalidOrderTransition(
                 f"Cannot transition from {current} to {target}"
             )
+        if current == models.OrderStatus.DELIVERED and target == models.OrderStatus.RETURNED:
+            if delivered_at is None:
+                raise InvalidOrderTransition(
+                    "Cannot return an order without a known delivery date"
+                )
+
+            current_time = now or _utc_now()
+            delivery_time = delivered_at
+            if delivery_time.tzinfo is None or delivery_time.utcoffset() is None:
+                delivery_time = delivery_time.replace(tzinfo=timezone.utc)
+            if current_time.tzinfo is None or current_time.utcoffset() is None:
+                current_time = current_time.replace(tzinfo=timezone.utc)
+            if delivery_time > current_time:
+                raise InvalidOrderTransition(
+                    "Cannot return an order before its delivery date"
+                )
+            if current_time - delivery_time > timedelta(days=30):
+                raise InvalidOrderTransition("The 30-day return window has expired")
 
 
 def create_order(repo: repository.OrderRepository, user_id: int, item: str):
@@ -71,8 +101,20 @@ def update_order(db: Session, repo: repository.OrderRepository, order_id: int, *
     if not order:
         raise OrderNotFoundError()
 
-    if "status" in kwargs and kwargs["status"] is not None:
-        OrderStateMachine.validate_transition(order.status, kwargs["status"])
+    target_status = kwargs.get("status")
+    transition_time = None
+    if target_status is not None:
+        if target_status in (models.OrderStatus.DELIVERED, models.OrderStatus.RETURNED):
+            transition_time = _utc_now()
+        OrderStateMachine.validate_transition(
+            order.status,
+            target_status,
+            delivered_at=order.delivered_at,
+            now=transition_time,
+        )
+
+    if target_status == models.OrderStatus.DELIVERED:
+        order.delivered_at = transition_time
 
     for key, value in kwargs.items():
         if value is not None:
