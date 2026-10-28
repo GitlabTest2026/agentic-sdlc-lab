@@ -156,8 +156,22 @@ def test_fsm_unknown_target_status():
         OrderStateMachine.validate_transition(models.OrderStatus.RECEIVED, "unknown")
 
 
-def test_delivered_status_has_no_outgoing_transitions():
-    assert OrderStateMachine.TRANSITIONS[models.OrderStatus.DELIVERED] == []
+def test_delivered_status_only_transitions_to_returned():
+    assert OrderStateMachine.TRANSITIONS[models.OrderStatus.DELIVERED] == [
+        models.OrderStatus.RETURNED,
+    ]
+
+
+def test_fsm_delivered_can_transition_to_returned():
+    OrderStateMachine.validate_transition(
+        models.OrderStatus.DELIVERED,
+        models.OrderStatus.RETURNED,
+    )
+
+
+def test_returned_status_is_terminal():
+    assert OrderStateMachine.TRANSITIONS[models.OrderStatus.RETURNED] == []
+    assert OrderStateMachine.is_terminal(models.OrderStatus.RETURNED)
 
 
 # ── Service Layer FSM Integration Tests ─────────────────────────────────────

@@ -27,9 +27,16 @@ class OrderStateMachine:
         models.OrderStatus.SHIPPED: [
             models.OrderStatus.DELIVERED
         ],
-        models.OrderStatus.DELIVERED: [],
+        models.OrderStatus.DELIVERED: [
+            models.OrderStatus.RETURNED,
+        ],
         models.OrderStatus.CANCELLED: [],
+        models.OrderStatus.RETURNED: [],
     }
+
+    @classmethod
+    def is_terminal(cls, status: models.OrderStatus) -> bool:
+        return status in cls.TRANSITIONS and not cls.TRANSITIONS[status]
 
     @classmethod
     def validate_transition(cls, current: models.OrderStatus, target: models.OrderStatus) -> None:
