@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.modules.orders import service, repository, models
+from app.modules.orders.exceptions import OrderOwnershipError
 from app.modules.orders.service import OrderStateMachine, InvalidOrderTransition
 
 
@@ -56,6 +57,21 @@ def test_list_orders():
     assert result[0].item == "a"
     assert result[1].item == "b"
     assert total == 2
+
+
+def test_list_orders_passes_status_filter():
+    repo = _make_mock_repo()
+    repo.list_orders.return_value = ([], 0)
+
+    service.list_orders(repo, user_id=1, status=models.OrderStatus.SHIPPED)
+
+    repo.list_orders.assert_called_once_with(
+        user_id=1,
+        status=models.OrderStatus.SHIPPED,
+        search=None,
+        page=1,
+        page_size=20,
+    )
 
 
 def test_update_order_status():
@@ -175,6 +191,20 @@ def test_returned_status_is_terminal():
 
 
 # ── Service Layer FSM Integration Tests ─────────────────────────────────────
+
+
+def test_cancel_order_delivered_raises_order_ownership_error():
+    order = _make_order(status=models.OrderStatus.DELIVERED)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+
+    with pytest.raises(
+        OrderOwnershipError, match="Cannot cancel a delivered order"
+    ):
+        service.cancel_order(db, repo, 1)
+
+    db.commit.assert_not_called()
+    db.refresh.assert_not_called()
 
 
 def test_update_order_invalid_status_transition():

@@ -75,4 +75,4 @@ Integration tests use `TEST_DATABASE_URL` env var, falling back to `DATABASE_URL
 
 ## Example
 
-`curl http://localhost:8000/order/1` fetches one order.
+`curl http://localhost:8000/orders/1` fetches one order.

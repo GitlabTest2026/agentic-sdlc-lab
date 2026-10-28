@@ -100,10 +100,13 @@ def delete_order(db: Session, repo: repository.OrderRepository, order_id: int):
 
 
 def cancel_order(db: Session, repo: repository.OrderRepository, order_id: int):
-    """Cancel an order. Raises OrderNotFoundError if not found or OrderOwnershipError if already terminal."""
+    """Cancel an order unless it has already been delivered or cancelled."""
     order = repo.get_order(order_id)
     if not order:
         raise OrderNotFoundError()
+
+    if order.status == models.OrderStatus.DELIVERED:
+        raise OrderOwnershipError("Cannot cancel a delivered order")
 
     if order.status == models.OrderStatus.CANCELLED:
         raise OrderOwnershipError("Order is already cancelled")
