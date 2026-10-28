@@ -17,6 +17,10 @@ class InvoiceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvoiceRefund(InvoiceRead):
+    pass
+
+
 class InvoicePaid(BaseModel):
     order_id: int
     external_invoice_id: str | None = None
