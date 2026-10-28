@@ -1,7 +1,8 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 import pytest
 
-from app.modules.orders import service, repository, models
+from app.modules.orders import service, repository, models, schemas
 from app.modules.orders.exceptions import OrderOwnershipError
 from app.modules.orders.service import OrderStateMachine, InvalidOrderTransition
 
@@ -23,6 +24,7 @@ def _make_order(item="widget", status="received"):
     order.id = 1
     order.item = item
     order.status = status
+    order.delivered_at = None
     return order
 
 
@@ -182,6 +184,7 @@ def test_fsm_delivered_can_transition_to_returned():
     OrderStateMachine.validate_transition(
         models.OrderStatus.DELIVERED,
         models.OrderStatus.RETURNED,
+        delivered_at=datetime.now(timezone.utc),
     )
 
 
@@ -225,3 +228,81 @@ def test_update_order_valid_status_transition():
     assert result.status == "processing"
     db.commit.assert_called_once()
     db.refresh.assert_called_once_with(order)
+
+
+def test_update_order_return_without_delivery_timestamp():
+    order = _make_order(status=models.OrderStatus.DELIVERED)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+
+    with pytest.raises(InvalidOrderTransition, match="delivery date"):
+        service.update_order(db, repo, 1, status=models.OrderStatus.RETURNED)
+
+    db.commit.assert_not_called()
+
+
+def test_update_order_delivery_transition_sets_timestamp(monkeypatch):
+    order = _make_order(status=models.OrderStatus.SHIPPED)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+    now = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(service, "_utc_now", lambda: now)
+
+    result = service.update_order(
+        db, repo, 1, status=models.OrderStatus.DELIVERED
+    )
+
+    assert result.status == models.OrderStatus.DELIVERED
+    assert result.delivered_at == now
+
+
+def test_update_order_return_within_window_is_allowed(monkeypatch):
+    order = _make_order(status=models.OrderStatus.DELIVERED)
+    now = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+    order.delivered_at = now - timedelta(days=1)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+    monkeypatch.setattr(service, "_utc_now", lambda: now)
+
+    result = service.update_order(
+        db, repo, 1, status=models.OrderStatus.RETURNED
+    )
+
+    assert result.status == models.OrderStatus.RETURNED
+    db.commit.assert_called_once()
+
+
+def test_update_order_return_at_30_day_boundary_is_allowed(monkeypatch):
+    order = _make_order(status=models.OrderStatus.DELIVERED)
+    now = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+    order.delivered_at = now - timedelta(days=30)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+    monkeypatch.setattr(service, "_utc_now", lambda: now)
+
+    service.update_order(db, repo, 1, status=models.OrderStatus.RETURNED)
+
+    db.commit.assert_called_once()
+
+
+def test_update_order_return_after_window_is_rejected(monkeypatch):
+    order = _make_order(status=models.OrderStatus.DELIVERED)
+    now = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+    order.delivered_at = now - timedelta(days=30, seconds=1)
+    repo = _make_mock_repo(order=order)
+    db = _make_db()
+    monkeypatch.setattr(service, "_utc_now", lambda: now)
+
+    with pytest.raises(InvalidOrderTransition, match="30-day return window"):
+        service.update_order(
+            db, repo, 1, status=models.OrderStatus.RETURNED
+        )
+
+    db.commit.assert_not_called()
+
+
+def test_order_update_rejects_client_delivery_timestamp():
+    with pytest.raises(ValueError):
+        schemas.OrderUpdate.model_validate(
+            {"delivered_at": "2026-10-28T12:00:00Z"}
+        )
